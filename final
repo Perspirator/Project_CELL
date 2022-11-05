@@ -1,0 +1,888 @@
+#name: Alejandro Miranda
+#id: aamirand
+#date: 4/2/2022
+#project: Project CELL
+#music by Diego E Martinez
+ 
+import pygame
+import math
+import random
+from cmu_112_graphics import*
+#from filename import*
+ 
+def distance(x0, y0, x1, y1):
+    return ((y0-y1)**2+(x0-x1)**2)**.5
+ 
+class player(object):
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.size = 25
+        self.mSpeed = 5
+        self.health = 100
+        self.mVals = dict()
+        pass
+ 
+    def finish(self, app, event):
+        eI = 0
+        while eI < len(app.enemyL):
+           
+            enemy = app.enemyL[eI]
+            if getCell(app, self.x, self.y) == getCell(app, enemy.x, enemy.y) and enemy.stagger:
+                enemy.explode(app)
+                hChange = self.health+10
+                if hChange > 100:
+                    hChange = 100
+                self.health = hChange
+               
+            eI +=1
+ 
+        pass
+ 
+    def getCoors(self):
+        return self.x, self.y
+ 
+    def move(self, app): #use key released and key pressed for smooth
+        d = self.mSpeed
+        if 'd' in self.mVals and self.mVals['d']:
+            self.x += d
+            if self.correctPosition(app):
+                self.x-=d
+        if 'a' in self.mVals and self.mVals['a']:
+            self.x -= d
+            if self.correctPosition(app):
+                self.x += d
+        if 'w' in self.mVals and self.mVals['w']:
+            self.y -= d
+            if self.correctPosition(app):
+                self.y += d
+        if 's' in self.mVals and self.mVals['s']:
+            self.y += d
+            if self.correctPosition(app):
+                self.y -= d
+        self.correctPosition(app)
+    def correctPosition(self, app):
+        playerCell = getCell(app, self.x, self.y)
+        pRow = playerCell[0]
+        pCol = playerCell[1]
+        opCell = app.grid.plot[pRow][pCol]
+        if opCell == 1 or opCell == 2:
+            return True
+        return False
+ 
+    def draw(self, app, canvas):
+        size = self.size
+        hPercentage = self.health/100
+        x0, y0, x1, y1 = self.x-size, self.y-size, self.x+size, self.y+size
+        canvas.create_oval(x0, y0, x1, y1, fill='white')
+       
+        barX = 100*hPercentage
+        canvas.create_rectangle(10, 10, 10+barX,
+        25, fill = 'green')
+        canvas.create_rectangle(10, 10, 110,
+        25, outline = 'black')
+   
+ 
+ 
+class projectile(object): #fix undefined error
+    def __init__(self, x, y, fX, fY, app):
+        self.xCoor = x
+        self.yCoor = y
+        self.r = 3
+        self.genDist = 0
+        self.bTime = app.timePassed
+       
+        if fX-self.xCoor  < 0:
+            self.angle = math.atan2((fY-self.yCoor), (fX-self.xCoor))
+        else:
+            self.angle = math.atan2((fY-self.yCoor), (fX-self.xCoor))
+       
+        pass
+ 
+    def wCollision(self, app):
+        bulletCell = getCell(app, self.xCoor, self.yCoor)
+        bulletRow = int(bulletCell[0])
+        bulletCol = int(bulletCell[1])
+        try:
+            if app.grid.plot[bulletRow][bulletCol] == 1:
+                app.bulletL.remove(self)
+        except:
+            pass
+ 
+    def eCollision(self, app, enemy): #for bullet rn
+        checkDist = self.r+enemy.r
+        if distance(enemy.x, enemy.y, self.xCoor, self.yCoor) < checkDist:
+            try: app.bulletL.remove(self)
+            except: pass
+            enemy.health-= 1  
+   
+   
+    def shotGun(self, app):
+        adjustment = self.angle+math.pi/16
+        interval = (adjustment-self.angle)/3
+        for b in range(4):
+            app.bulletL.append(projectile(self.xCoor, self.yCoor, self.xCoor+math.cos(self.angle-interval*b),
+            self.yCoor+math.sin(self.angle-interval*b), app))
+        for b2 in range(4):
+            app.bulletL.append(projectile(self.xCoor, self.yCoor, self.xCoor+math.cos(self.angle+interval*b2),
+            self.yCoor+math.sin(self.angle+interval*b2), app))
+            pass
+           
+        pass
+ 
+    def move(self, app):
+        self.xCoor += 20*math.cos(self.angle)
+        self.yCoor += 20*math.sin(self.angle)
+        self.genDist += 1
+       
+        pass
+   
+    def draw(self, app, canvas):
+        canvas.create_oval(self.xCoor-self.r, self.yCoor-self.r,
+        self.xCoor+self.r, self.yCoor+self.r, fill = 'yellow')
+        pass
+ 
+class Enemy(object):
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.r = 10
+        self.health = 1
+        self.path = []
+        self.damage = 1
+        self.color = 'grey'
+        self.stagger = False
+        self.count = 0
+ 
+   
+    def attack(self, app):
+        app.player.health -= self.damage
+ 
+    def suffer(self, app):
+        if self.health == 0:
+            app.enemyL.remove(self)
+ 
+    def checkFromCell(self, app, drow, dcol):
+        if app.grid.plot[drow][dcol] == 0:
+            return True
+        else:
+            return False
+ 
+    def explode(self, app):
+        self.health = 0
+        app.splatteredL.append(getCell(app, self.x, self.y))
+        self.suffer(app)
+ 
+    def seek(self, app):
+        try:
+            d = self.speed
+            currLoc = 0
+            # if self.path == [] or self.count > 5:
+ 
+            #     self.path = self.aStar(app)    
+            #     self.count = 0
+ 
+            # else:
+            #     self.count += 1
+            self.path = self.aStar(app)  
+            currLoc = self.path.pop(0)
+           
+            if self.path != []:
+           
+                if self.path[0][1]-currLoc[1] == 1 and self.path[0][0]-currLoc[0] == 1: #col-col and row-row
+                    self.x += d
+                    self.y += d
+                elif self.path[0][1]-currLoc[1] == 1 and self.path[0][0]-currLoc[0] == -1: #col-col and row-row
+                    self.x += d
+                    self.y -= d
+                elif self.path[0][1]-currLoc[1] == -1 and self.path[0][0]-currLoc[0] == 1: #col-col and row-row
+                    self.x -= d
+                    self.y += d
+                elif self.path[0][1]-currLoc[1] == -1 and self.path[0][0]-currLoc[0] == -1: #col-col and row-row
+                    self.x -= d
+                    self.y -= d
+                elif self.path[0][1]-currLoc[1] == 1: #col-col
+                    self.x += d
+                elif self.path[0][1]-currLoc[1] == -1: #col-col
+                    self.x -= d
+                elif self.path[0][0]-currLoc[0] == 1: #row-row
+                    self.y += d
+                elif self.path[0][0]-currLoc[0] == -1: #row-row
+                    self.y -= d  
+            else:
+                self.attack(app)
+        except:
+            pass
+ 
+#0 path
+#1 wall
+#2 player
+#3 enemy
+ 
+    def bFS(self, app): #seeking pattern
+        bfsCheck = []
+        exPaths = [] #q
+        exPaths.add(getCell(self.x, self.y))
+        bfsCheck.add(getCell(self.x, self.y))
+        srow, scol = getCell(self.x, self.y)
+        while exPaths != []:
+            for dX in [-1, 1, 0]:
+                for dY in [-1, 1, 0]:
+                    drow = srow+dY
+                    dcol = scol+dX
+                    if self.checkFromCell(app, drow, dcol):
+                        exPaths.discard(drow, dcol)
+                        bfsCheck.add(drow, dcol)
+        pass
+ 
+    def dijkstra(self, app): #https://www.youtube.com/watch?v=XB4MIexjvY0 & https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm
+        queue = []
+        dist = [([math.inf]*app.grid.cols) for row in range(app.grid.rows)]
+        path = dict()
+        pathL = []
+        queue.append(getCell(app, self.x, self.y))
+        distRow = getCell(app, self.x, self.y)[0]
+        distCol = getCell(app, self.x, self.y)[1]
+        dist[distRow][distCol] = 0
+        targetCell = getCell(app, app.player.x, app.player.y)
+        checkedDists = set()
+        while queue != []:
+            cRow = queue[0][0]
+            cCol = queue[0][1]
+            check = dist[cRow][cCol]
+            index = 0
+            for i in range(len(queue)):
+                element = queue[i]
+                if dist[element[0]][element[1]] < check:
+                    check = dist[element[0]][element[1]]
+                    index = i
+            sCell = queue.pop(index)
+            srow = sCell[0]
+            scol = sCell[1]
+            if targetCell == (srow, scol):
+                key = targetCell
+                checkDist = 0
+                while checkDist != dist[srow][scol]:
+                    element = path.pop(key)
+                    pathL.append((element))
+                    key = element
+                    checkDist += 1
+                return pathL[::-1]
+            for row in [-1, 1, 0]:
+                for col in [-1, 1, 0]:
+                    drow = srow+row
+                    dcol = scol+col
+                    if self.checkFromCell(app, drow, dcol):
+                        if (drow, dcol) not in checkedDists:
+                            queue.append((drow, dcol))
+                            checkedDists.add((drow,dcol))
+                            altP = dist[srow][scol]+1
+                            if altP < dist[drow][dcol]:
+                                dist[drow][dcol] = altP
+                                path[(drow, dcol)] = (srow, scol)
+               
+    def aStar(self, app):  
+        queue = []
+        dist = [([math.inf]*app.grid.cols) for row in range(app.grid.rows)]
+        path = dict()
+        pathL = []
+        startRow, startCol = getCell(app, self.x, self.y)
+        queue.append(getCell(app, self.x, self.y))
+        distRow = getCell(app, self.x, self.y)[0]
+        distCol = getCell(app, self.x, self.y)[1]
+        dist[distRow][distCol] = 0
+        targetCell = getCell(app, app.player.x, app.player.y)
+        checkedDists = set()
+        while queue != []:
+            cRow = queue[0][0]
+            cCol = queue[0][1]
+            check = dist[cRow][cCol]
+            index = 0
+            for i in range(len(queue)):
+                element = queue[i]
+                if dist[element[0]][element[1]] < check:
+                    check = dist[element[0]][element[1]]
+                    index = i
+            sCell = queue.pop(index)
+            srow = sCell[0]
+            scol = sCell[1]
+            if targetCell == (srow, scol):
+                key = targetCell
+                checkDist = 0
+                while (startRow, startCol) != element:
+                    element = path.get(key, (startRow, startCol))
+                    pathL.append((element))
+                    key = element
+                    checkDist += 1
+                return pathL[::-1]
+            for row in [-1, 1, 0]:
+                for col in [-1, 1, 0]:
+                    drow = srow+row
+                    dcol = scol+col
+                    if self.checkFromCell(app, drow, dcol):
+                        if (drow, dcol) not in checkedDists:
+                            queue.append((drow, dcol))
+                            checkedDists.add((drow,dcol))
+                            altP = dist[srow][scol]+1
+                            if altP < dist[drow][dcol]:
+                                modDist = ((drow-startRow)**2+(dcol-startCol)**2)**.5
+                                dist[drow][dcol] = altP+modDist
+                                path[(drow, dcol)] = (srow, scol)
+ 
+    def draw(self, app, canvas):
+        canvas.create_oval(self.x-self.r, self.y-self.r, self.x+self.r,
+        self.y+self.r, fill = self.color)
+ 
+    def drawBlink(self, app, canvas):
+        if app.level == 2:
+            if app.timePassed % 96 <= 48:
+                x = self.x
+                y = self.y
+                r = self.r
+                canvas.create_polygon(x-r,y, x, y-r, x+r, y, x, y+r, fill = 'orange')
+            else:
+                x = self.x
+                y = self.y
+                r = self.r
+                canvas.create_polygon(x-r,y, x, y-r, x+r, y, x, y+r, fill = 'yellow')
+        else:
+            if app.timePassed % 96 <= 48:
+                canvas.create_oval(self.x-self.r, self.y-self.r, self.x+self.r,
+                self.y+self.r, fill = self.color, outline = 'orange')
+            else:
+                canvas.create_oval(self.x-self.r, self.y-self.r, self.x+self.r,
+                self.y+self.r, fill = self.color, outline = 'yellow')
+ 
+class Gremlin(Enemy):
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.r = 10
+        self.speed = 2
+        self.color = 'red'
+        self.pos = self.x, self, y
+        self.damage = 1
+        self.health = 10
+       
+    def selfD(self, app, canvas):
+        if self.health == 0:
+            explode = True
+        else:
+            pass
+ 
+class Ecoli(Enemy): #IllocE
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.r = 20
+        self.speed = 2
+        self.color = 'red4'
+        self.pos = self.x, self, y
+        self.damage = 10
+        self.health = 20
+    def seek(self, app):
+        try:
+            d = self.speed
+            currLoc = 0
+            self.path = self.dijkstra(app)    
+            currLoc = self.path.pop(0)
+            if self.path != []:
+                if self.path[0][1]-currLoc[1] == 1 and self.path[0][0]-currLoc[0] == 1: #col-col and row-row
+                    self.x += d
+                    self.y += d
+                elif self.path[0][1]-currLoc[1] == 1 and self.path[0][0]-currLoc[0] == -1: #col-col and row-row
+                    self.x += d
+                    self.y -= d
+                elif self.path[0][1]-currLoc[1] == -1 and self.path[0][0]-currLoc[0] == 1: #col-col and row-row
+                    self.x -= d
+                    self.y += d
+                elif self.path[0][1]-currLoc[1] == -1 and self.path[0][0]-currLoc[0] == -1: #col-col and row-row
+                    self.x -= d
+                    self.y -= d
+                elif self.path[0][1]-currLoc[1] == 1: #col-col
+                    self.x += d
+                elif self.path[0][1]-currLoc[1] == -1: #col-col
+                    self.x -= d
+                elif self.path[0][0]-currLoc[0] == 1: #row-row
+                    self.y += d
+                elif self.path[0][0]-currLoc[0] == -1: #row-row
+                    self.y -= d  
+            else:
+                self.attack(app)
+        except:
+            pass
+            #print("lol")
+   
+ 
+class Boss(Enemy):
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.r = 25
+        self.pos = self.x, self, y
+        self.speed = 2
+        self.color = "purple"
+        self.dam = 69
+        self.health = 500
+        self.hpMax = self.health
+        self.stage = 1
+        self.attackL = []
+        self.count = 0
+        self.aCount = 0
+        self.nHit = True
+   
+    def seek(self, app):
+        try:
+            d = self.speed
+            currLoc = 0
+            self.path = self.dijkstra(app)    
+            currLoc = self.path.pop(0)
+           
+            if self.path != []:
+           
+                if self.path[0][1]-currLoc[1] == 1 and self.path[0][0]-currLoc[0] == 1: #col-col and row-row
+                    self.x += d
+                    self.y += d
+                elif self.path[0][1]-currLoc[1] == 1 and self.path[0][0]-currLoc[0] == -1: #col-col and row-row
+                    self.x += d
+                    self.y -= d
+                elif self.path[0][1]-currLoc[1] == -1 and self.path[0][0]-currLoc[0] == 1: #col-col and row-row
+                    self.x -= d
+                    self.y += d
+                elif self.path[0][1]-currLoc[1] == -1 and self.path[0][0]-currLoc[0] == -1: #col-col and row-row
+                    self.x -= d
+                    self.y -= d
+                elif self.path[0][1]-currLoc[1] == 1: #col-col
+                    self.x += d
+                elif self.path[0][1]-currLoc[1] == -1: #col-col
+                    self.x -= d
+                elif self.path[0][0]-currLoc[0] == 1: #row-row
+                    self.y += d
+                elif self.path[0][0]-currLoc[0] == -1: #row-row
+                    self.y -= d  
+            else:
+                self.attack(app)
+        except:
+            pass
+            print("lol")
+    def attackType(self, app):
+        if self.stage == 1:
+            self.randSquare(app)
+        pass
+ 
+    def randSquare(self, app):
+        print("randSquare")
+        self.attackL = []
+        aC = 50
+        for n in range(9):
+            row = (random.randrange(0, app.grid.rows))
+            col = (random.randrange(0, app.grid.cols))
+            x0, y0, x1, y1 = getCellBounds(app, row, col)
+            self.attackL.append((x0-aC, y0+aC, x1+aC, y1-aC))
+        pRow, pCol = getCell(app, app.player.x, app.player.y)
+        x0, y0, x1, y1 = getCellBounds(app, pRow, pCol)
+        self.attackL.append(((x0-aC, y0+aC, x1+aC, y1-aC)))
+       
+       
+    def randHurt(self, app):
+        if self.count < 85 and self.count > 69 and self.nHit:
+            for eL in self.attackL:
+                x0, y0, x1, y1 = eL
+                pX, pY = app.player.x, app.player.y
+                if pX > x0 and pX < x1 and pY < y0 and pY > y1:
+                    app.player.health -= 20
+                    self.nHit = False
+       
+   
+    def drawAttack(self, app, canvas):
+        if self.stage == 1:
+            if self.count < 85 and self.count > 69:
+                for eL in self.attackL:
+                    x0, y0, x1, y1 = eL
+                    canvas.create_rectangle(x0, y0, x1, y1, fill = 'magenta',
+                    outline = 'crimson')
+            elif self.count < 70 and self.count > 50:
+                for eL in self.attackL:
+                    x0, y0, x1, y1 = eL
+                    canvas.create_rectangle(x0, y0, x1, y1, outline = 'crimson')
+ 
+    def drawHealth(self, app, canvas):
+        hPercentage = self.health/self.hpMax
+        barX = 500*hPercentage
+        canvas.create_rectangle(150, 100, 150+barX,
+        2, fill = 'red')
+        canvas.create_rectangle(150, 100, 650, 2, outline = 'black')
+ 
+    def draw(self, app, canvas):
+        x = self.x
+        y = self.y
+        r = self.r
+        canvas.create_polygon(x-r,y, x, y-r, x+r, y, x, y+r, fill = 'deep pink')
+ 
+           
+#0 path
+#1 wall
+#2 player
+#3 enemy      
+ 
+class Grid(object):
+    def __init__(self, rows, cols, app):
+        self.rows = rows
+        self.cols = cols
+        self.plot = [[0]*cols for row in range(rows)]
+        for i in range(rows):
+            for j in range(cols):
+                if (i == 0 or i == rows-1 or j == 0 or j == cols-1):
+                    self.plot[i][j] = 1
+        #print(app.level)
+        if app.level == 0:
+           
+            for row in range(20, 50):
+                for col in range(10, 12):
+                    self.plot[row][col] = 1
+ 
+            for row in range(10, 12):
+                for col in range(25, 35):
+                    self.plot[row][col] = 1
+           
+            for row in range(5, 10):
+                for col in range(5, 10):
+                    self.plot[row][col] = 1
+           
+            # for row in range(7, 14):
+            #     for col in range(8, 10):
+            #         self.plot[row][col] = 1
+           
+            for row in range(20, 33):
+                for col in range(16, 18):
+                    self.plot[row][col] = 1
+ 
+ 
+            for row in range(40, 45):
+                for col in range(40, 50):
+                    self.plot[row][col] = 1
+       
+        elif app.level == 1:
+            self.plot[10][10] = 1
+            self.plot[10][10] = 1
+            self.plot[10][11] = 1
+            self.plot[10][10] = 1
+            self.plot[22][10] = 1
+            self.plot[10][10] =1
+            self.plot[25][10] =1
+            self.plot[10][25] =1
+            self.plot[17][44] =1
+           
+            for row in range(20, 50):
+                for col in range(20, 50):
+                    self.plot[row][col] = 1
+ 
+            for row in range(10, 20):
+                for col in range(10, 15):
+                    self.plot[row][col] = 1
+            for row in range(40, 45):
+                for col in range(40, 50):
+                    self.plot[row][col] = 1
+           
+ 
+               
+       
+    def draw(self, app, canvas):
+       
+        for i in range(self.rows):
+            for j in range(self.cols):
+                if self.plot[i][j] == 1:
+                    canvas.create_rectangle(j*app.cellWidth, i*app.cellHeight,
+                    j*app.cellWidth+app.cellWidth, i*app.cellHeight+app.cellHeight,
+                    fill = 'light pink')
+                   
+ 
+def getCellBounds(app, row, col):
+    cellWidth = app.width//app.grid.cols
+    cellHeight = app.height//app.grid.rows
+    x0 = cellWidth*col
+    y0 = cellHeight*row
+    x1 = x0+cellWidth
+    y1 = y0+cellHeight
+    return x0, y0, x1, y1
+ 
+def getCell(app, x, y):
+    cellWidth = app.width//app.grid.cols
+    cellHeight = app.height//app.grid.rows
+    row = y // cellHeight
+    col = x // cellWidth
+    return row, col
+ 
+class Sound(object):
+    def __init__(self, path):
+        self.path = path
+        self.loops = 1
+        pygame.mixer.music.load(path)
+   
+    def isPlaying(self):
+        return bool(pygame.mixer.music.get_busy())
+   
+    def start(self, loops = 1):
+        self.loops = loops
+        pygame.mixer.music.play(loops=loops)
+ 
+    def stop(self):
+        pygame.mixer.music.stop()
+ 
+def appStarted(app): #initiates objects
+    app.level = 0
+    pygame.mixer.init()
+    app.sound = Sound("The Cell Project 2.0.mp3")
+    app.grid = Grid(50, 50, app)
+    app.cellWidth = app.width//app.grid.cols
+    app.cellHeight = app.height//app.grid.rows
+    app.player = player(50, 50)
+    app.bulletL = []
+    app.enemyL = []
+    app.timerDelay = 16
+    app.timePassed= 0
+    app.a = 0
+    app.timePassed2 = 0
+    app.gameOver = False
+    app.count = 0
+    app.runCredits = False
+    app.gridI = 0
+    app.mouseState = False
+    app.bStop = True
+    app.splatteredL = []
+    app.tCount = 0
+ 
+def bStop(app):
+    app.count += 1
+    if app.count %  5 == 0:
+        app.bStop = True
+   
+ 
+def mousePressed(app, event):
+    app.mouseState = True
+    if app.level == 0:
+        app.level = 1
+       
+    app.mouseState
+   
+    if app.bStop:
+        app.bulletL.append(projectile(app.player.x, app.player.y, event.x, event.y, app))
+        app.bulletL[-1].shotGun(app)
+        app.bStop = False
+   
+    if app.gameOver:
+         app.level = 0
+         app.gameOver = False
+         app.sound.stop()
+         runApp(width = 1080, height = 941)
+ 
+    if app.runCredits:
+        runApp(width = 1080, height = 941)
+ 
+def wave1(app):
+    if app.level == 1 and app.a == 0:
+        app.sound.start()
+        app.enemyL.append(Gremlin(500, 500))
+        #app.enemyL.append(Gremlin(550, 500))
+        #app.enemyL.append(Gremlin(500, 550))
+        app.enemyL.append(Gremlin(400, 100))
+        #app.enemyL.append(Gremlin(200, 500))
+        app.enemyL.append(Gremlin(600, 500))
+        app.enemyL.append(Gremlin(1000, 550))
+       
+        app.a += 1
+    elif len(app.enemyL) == 2 and app.a == 1:
+        app.enemyL.append(Gremlin(500, 500))
+        app.enemyL.append(Gremlin(100, 500))
+        app.enemyL.append(Gremlin(700, 550))
+        app.enemyL.append(Ecoli(600, 500))
+       
+        app.a +=1
+    # elif len(app.enemyL) == 3 and app.a == 2:
+    #     app.enemyL.append(Gremlin(500, 500))
+    #     app.enemyL.append(Gremlin(100, 500))
+    #     app.enemyL.append(Gremlin(700, 550))
+    #     app.enemyL.append(Ecoli(600, 500))
+    #     app.a += 1
+    elif app.enemyL == [] and app.level == 1:
+        app.level += 1
+ 
+def wave2(app):
+    if app.level == 2 and app.a == 2:
+        app.enemyL.append(Boss(700, 800))
+        app.a += 1
+    elif app.enemyL == [] and app.level == 2:
+        app.runCredits = True
+        app.level += 1
+    pass
+ 
+def levelCleared(app):
+    if app.enemyL == [] and app.level == 2:
+        app.level += 1
+        return True
+    if app.enemyL == []:
+        app.level += 1
+    else:
+        return False
+ 
+def timerFired(app):
+    if app.player.mVals != dict():
+        app.player.move(app)
+    app.timePassed += app.timerDelay
+    app.timePassed2 += app.timerDelay
+    if app.bStop == False:
+        bStop(app)
+    if app.bulletL != []:
+        bI = 0
+        while bI < len(app.bulletL):
+            bullet = app.bulletL[bI]
+            bullet.move(app)
+            if bullet.genDist == 10:
+                app.bulletL.remove(bullet)
+            bI += 1
+            i = 0
+            while i < len(app.enemyL):
+                bullet.eCollision(app, app.enemyL[i])
+                app.enemyL[i].suffer(app)
+                i+= 1
+            bullet.wCollision(app)
+    if app.level == 1:
+        wave1(app)
+       
+    elif app.level == 2:
+        app.grid = Grid(50, 50, app)
+        wave2(app)
+        if app.enemyL != []:
+            boss = app.enemyL[0]
+            boss.count += 1
+            if boss.count%50 == 0:
+                boss.attackType(app)
+            if boss.count == 85:
+                boss.nHit = True
+                boss.count = 0
+            boss.randHurt(app)
+ 
+    if app.level == 3:
+        app.sound.stop()
+       
+       
+    if app.enemyL != []:
+        eI = 0
+        while eI < len(app.enemyL):
+            enemy = app.enemyL[eI]
+            if enemy.health > 5:
+                enemy.seek(app)
+            else:
+                enemy.stagger = True
+            eI += 1
+               
+    if app.player.health <= 0:
+        app.gameOver = True
+    pass
+ 
+def keyPressed(app, event): #moves player
+    if event.key == 'd' :
+        app.player.mVals['d'] = True
+    if event.key == 'a':
+        app.player.mVals['a'] = True
+    if event.key == 'w':
+        app.player.mVals['w'] = True
+    if event.key == 's':
+        app.player.mVals['s'] = True
+    if event.key == 'f':
+        app.player.finish(app, event)
+    app.player.move(app)
+ 
+def keyReleased(app, event):
+    if event.key == 'd' :
+        app.player.mVals['d'] = False
+    if event.key == 'a':
+        app.player.mVals['a'] = False
+    if event.key == 'w':
+        app.player.mVals['w'] = False
+    if event.key == 's':
+        app.player.mVals['s'] = False
+    app.player.move(app)
+ 
+def drawMap(app, canvas, color): #draws pink floor
+    canvas.create_rectangle(0, 0, app.width, app.height, fill=color)
+   
+ 
+def redrawAll(app, canvas): #draws everything
+    if app.level == 0:
+        drawMap(app, canvas, 'black')
+        canvas.create_text(app.width/2, 400,
+        text='Welcome - Your Mission is to Eliminate All Antigens', fill='white',
+        font = 'Helvetica 30 bold')
+        canvas.create_text(app.width/2, 500,
+        text='Controls: WASD - movement | F - finish | click - shoot | (best w/ Mouse and Keyboard)', fill='white',
+        font = 'Helvetica 15')
+        canvas.create_text(app.width/2, 550,
+        text='Click to Start Game', fill='white',
+        font = 'Helvetica 15')
+    elif app.level == 1:
+        drawMap(app, canvas, 'black')
+        app.grid.draw(app, canvas)
+           
+    elif app.level == 2:
+        drawMap(app, canvas, 'black')
+        app.grid.draw(app, canvas)
+    app.player.draw(app, canvas)
+    for enemy in app.enemyL:
+        if enemy.stagger:
+            enemy.drawBlink(app, canvas)
+            pass
+        else:
+            enemy.draw(app, canvas)
+            if app.level == 2:
+                enemy.drawAttack(app, canvas)
+                enemy.drawHealth(app, canvas)
+   
+    for bullet in app.bulletL:
+        bullet.draw(app, canvas)
+    if app.gameOver:
+        canvas.create_rectangle(0, 0, app.width, app.height, fill='red4')
+        # canvas.create_text(app.width/2, 20,
+        # text="Mission Failed - We'll Get them Next Time: Click to Try Again",
+        # fill='white')
+        canvas.create_text(app.width/2, 400,
+        text="Mission Failed - We'll Get them Next Time: Click to Try Again", fill='white',
+        font = 'Helvetica 15')
+    if app.runCredits:
+        canvas.create_rectangle(0, 0, app.width, app.height, fill='white')
+        # canvas.create_text(app.width/2, 20,
+        # text="Poggers - Good Job",
+        # fill='black')
+        canvas.create_text(app.width/2, 400,
+        text="Mission Passed - Anaroc the IXX King Eliminated", fill='black',
+        font = 'Helvetica 30 bold')
+        canvas.create_text(app.width/2, 450,
+        text="Click For Repeat", fill='black',
+        font = 'Helvetica 15')
+ 
+   
+   
+       
+   
+ 
+ 
+ 
+ #fullscreen~
+ 
+ 
+#player moving w/ gun
+#pathfinding w/ empty playground
+#map generation
+#camera follow hyperlight drifter
+ 
+#use scalar for fps
+#have defualt player movement like 20 pixels/sec
+#use some algebra to calc how much movement per frame
+#fix timer delay to something like 16 ms
+#have key pressed and key released to make player movement smooth (for later)
+ 
+#proto
+ 
+ 
+#fullscreen~ | (belowG)
+ 
+runApp(width = 1080, height = 941)
+ 
+
